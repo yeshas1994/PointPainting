@@ -2,8 +2,8 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <Eigen/Eigen>
-#include "utils.hpp"
-#include "lidar_tools.hpp"
+#include "utils.h"
+#include "lidar_tools.h"
 #include <opencv2/highgui.hpp>
 #include <opencv2/core.hpp>
 

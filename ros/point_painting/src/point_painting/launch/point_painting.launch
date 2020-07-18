@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="nodelet" type="nodelet" name="pcl_manager" args="manager" output="screen" />
+    <!-- passthrough filter to remove far away points-->
+    <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager" output="screen">
+        <remap from="~input" to="/velodyne_points" />
+        <rosparam>
+          filter_field_name: x
+          filter_limit_min: 0.01
+          filter_limit_max: 2.0
+          filter_limit_negative: False
+        </rosparam>
+    </node>
+
+    <node pkg="point_painting" name="point_painting_node" type="point_painting_node" output="screen">
+        <rosparam command="load" file="$(find point_painting)/config/config.yaml" />
+    </node> 
+
+</launch>

@@ -1,0 +1,8 @@
+camera_topic: "d435/color/image_raw"
+serialized_engine: "/home/yeshas/point_painting/src/segmentation/fcn32_torchscript.pt"
+
+mean: [0.485, 0.456 , 0.406]
+std: [0.225, 0.225, 0.225]
+
+use_cuda: false
+

@@ -2,5 +2,13 @@ assets/
 build/
 .vscode/
 old/
+ros/**/libtorch/
+ros/**/.bag
+ros/**/devel/
+ros/**/build/
+test_files/**/libtorch/
+test_files/**/build/
+test_files/**/libtorch/
+*.bag
 *.swp
 

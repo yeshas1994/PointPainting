@@ -1,0 +1,5 @@
+camera_topic: "d435/color/image_raw"
+velodyne_topic: "velodyne_points"
+inference_topic: "d435/color/inference_image"
+
+camera_frame: "d435_color_optical_frame"

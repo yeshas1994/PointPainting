@@ -11,7 +11,11 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
   nh_private_.getParam("camera_topic", camera_topic_);
   nh_private_.getParam("inference_topic", inference_topic_);
   nh_private_.getParam("camera_frame", camera_frame_);
-  
+  nh_private_.getParam("json_path", json_path_);
+
+  std::ifstream json_in(json_path_);
+  j = nlohmann::json::parse(json_in);
+
   K << 617.99617, 0.0, 323.00136,  
     0.0, 617.47651, 237.02399, 
     0.0, 0.0, 1.0;
@@ -108,7 +112,7 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const sens
 
     cv::Vec3b class_color = seg_image.at<cv::Vec3b>(uv);
     // get color_map from yaml or whatever
-    painted_points.push_back(PointPainting::PtData(point[0], point[1], point[2], color_map[class_color]));
+    painted_points.push_back(PointPainting::PtData(point[0], point[1], point[2], j["color_map"][0]));
     
     if (buffer.at<cv::Vec3b>(uv) != cv::Vec3b(0, 0, 0)) { 
       if (rotated_point[2] <  depth.at<uchar>(uv)) {
@@ -165,7 +169,19 @@ void PointPainting::lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPt
 
     cv::Vec3b class_color = seg_image.at<cv::Vec3b>(uv);
     // get color_map from yaml or whatever
-    painted_points.push_back(PointPainting::PtData(point[0], point[1], point[2], color_map[class_color]));
+    // find index based on color from color_map
+    // int index = -1;
+    // ROS_INFO_STREAM("yeshas");
+    int index = 0;
+    int class_index = -1;
+    for (auto &array : j["color_map"]) {
+      if (class_color == cv::Vec3b(array[0], array[1], array[2])) {
+        class_index = index;
+        break;
+      }
+      index++;
+    }
+    painted_points.push_back(PointPainting::PtData(point[0], point[1], point[2], class_index));
     
     if (buffer.at<cv::Vec3b>(uv) != cv::Vec3b(0, 0, 0)) { 
       if (rotated_point[2] <  depth.at<uchar>(uv)) {

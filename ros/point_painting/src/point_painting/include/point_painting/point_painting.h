@@ -18,19 +18,23 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
+#include <nlohmann/json.hpp>
+
 
 class PointPainting {
 public:
-    struct PcData {
-        PcData(float xIn, float yIn, float zIn, uint8_t classIn)
-        : x(xIn), y(yIn), z(zIn), class_idx(classIn)
-        {}
+    struct PtData {
+        public:
+            PtData(float xIn, float yIn, float zIn, uint8_t classIn)
+            : x(xIn), y(yIn), z(zIn), class_idx(classIn)
+            {};
 
-        uint8_t class_idx;
-        float x;
-        float y;
-        float z;
+            PtData() = default;
 
+            float x;
+            float y;
+            float z;
+            uint8_t class_idx;
     };
 
 public:
@@ -45,6 +49,7 @@ public:
 private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
+    nlohmann::json j;
 
     image_transport::Publisher painted_pts_pub_;
     image_transport::ImageTransport it;
@@ -56,6 +61,7 @@ private:
     tf::StampedTransform velodyne_to_camera;
     std::string lidar_max_distance;
     std::string inference_engine;
+    std::string json_path_;
 
     // message_filters::Subscriber<sensor_msgs::Image> image_sub_;
     // message_filters::Subscriber<sensor_msgs::Image> inference_sub_;
@@ -77,7 +83,7 @@ private:
     std::string camera_topic_;
     std::string inference_topic_;
     std::string camera_frame_;
-    std::vector<PcData> painted_points;
+    std::vector<PtData> painted_points;
     // point vectors buffers
 
 };

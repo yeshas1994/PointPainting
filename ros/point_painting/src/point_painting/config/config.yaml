@@ -3,3 +3,5 @@ velodyne_topic: "velodyne_points"
 inference_topic: "d435/color/inference_image"
 
 camera_frame: "d435_color_optical_frame"
+
+json_path: "/home/yeshas/PointPainting/ros/point_painting/src/point_painting/config/color_mapping.json"

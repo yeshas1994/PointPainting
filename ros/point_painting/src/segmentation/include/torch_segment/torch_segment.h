@@ -14,6 +14,7 @@
 #include <opencv2/imgproc.hpp>
 #include <iostream>
 #include <memory>
+#include <mutex>
 
 class TorchEngine {
 private:
@@ -23,19 +24,21 @@ private:
     image_transport::Publisher inference_pub_;
     image_transport::Subscriber rgb_sub_;
 
-    cv::Mat rgb_image;
-    std_msgs::Header image_header;
+    cv::Mat rgb_image_;
+    std::mutex rgb_mutex_;
+    std_msgs::Header image_header_;
     std::string torch_engine_;
     std::string camera_topic_;
     std::vector<float> mean_;
     std::vector<float> std_;
-    cv::Scalar rgb_mean;
-    cv::Scalar rgb_std;
+    cv::Scalar rgb_mean_;
+    cv::Scalar rgb_std_;
     bool use_cuda_;
 
 public:
     TorchEngine(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
     void image_callback(const sensor_msgs::ImageConstPtr &image);
     void run_inference();
+    void run_gpu_inference();
 };
     

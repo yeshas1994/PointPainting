@@ -1,5 +1,5 @@
 #include "point_painting/point_painting.h"
-#include <Eigen/Eigen>
+
 PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : 
   nh_(nh),
   nh_private_(nh_private),
@@ -29,11 +29,21 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
             9.99999367e-01, -7.95058187e-04,  -7.96325701e-04,  -3.99545296e-02,
             0.00000000e+00,  0.00000000e+00,   0.00000000e+00,   1.00000000e+00;
 
-  cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
-
+  cloud_ = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
   painted_pts_pub_ = it.advertise("d435/color/painted_points", 1);
-  inference_sub_ = it.subscribe(inference_topic_, 100, &PointPainting::segmentation_callback, this);
-  rgb_sub_ = it.subscribe(camera_topic_, 100, &PointPainting::image_callback, this);
+  lidar_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("painted_cloud", 1);
+  // inference_sub_ = it.subscribe(inference_topic_, 100, &PointPainting::segmentation_callback, this);
+  inference_sub_ = it.subscribe(inference_topic_, 100,
+                                [this](const sensor_msgs::ImageConstPtr &image) {                            
+                                  std::scoped_lock<std::mutex> lock(seg_mutex_);
+                                  seg_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
+                                });
+  rgb_sub_ = it.subscribe(camera_topic_, 100, 
+                          [this](const sensor_msgs::ImageConstPtr &image) {                            
+                            std::scoped_lock<std::mutex> lock(rgb_mutex_);
+                            rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
+                            rgb_header_ = image->header;
+                          });
   lidar_sub_ = nh_.subscribe<pcl::PointCloud<pcl::PointXYZ>>(velodyne_topic_, 1000, &PointPainting::lidar_callback, this);
   // lidar_sub_.subscribe(nh_, velodyne_topic_, 1);
   // image_sub_.subscribe(nh_, camera_topic_, 1);
@@ -45,12 +55,12 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
 // inference on rgb_image
 void PointPainting::segmentation_callback(const sensor_msgs::ImageConstPtr &image) 
 {
-  seg_image = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
+  seg_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
 }
 void PointPainting::image_callback(const sensor_msgs::ImageConstPtr &image) 
 {
-  rgb_image = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
-  rgb_header = image->header;
+  rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
+  rgb_header_ = image->header;
 }
 void PointPainting::lidar_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input) 
 {
@@ -58,16 +68,17 @@ void PointPainting::lidar_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPt
   pass.setInputCloud(cloud_input);                                                                                                                                                                             
   pass.setFilterFieldName("x");                                                                                                                                                                                  
   pass.setFilterLimits(0.0, 10.0);                                                                                                                                                                          
-  pass.filter(*cloud); 
-  lidar_to_pixel(cloud);
+  pass.filter(*cloud_); 
+  lidar_to_pixel(cloud_);
 }
 
+// issues with message filters if implemented with rosbag
 void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const sensor_msgs::ImageConstPtr &segmentation_image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input) 
 {
   ROS_INFO("start");
   std_msgs::Header image_header = segmentation_image->header;
-  rgb_image = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
-  seg_image = cv_bridge::toCvCopy(segmentation_image, sensor_msgs::image_encodings::BGR8)->image;
+  rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
+  seg_image_ = cv_bridge::toCvCopy(segmentation_image, sensor_msgs::image_encodings::BGR8)->image;
 
   if (seg_image.empty())
   {
@@ -133,22 +144,39 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const sens
   painted_pts_pub_.publish(image_msg);
 }
 
+
+pcl::PointXYZRGB PointPainting::get_colored_point(float x, float y, float z, int r, int g, int b) {
+  pcl::PointXYZRGB point;
+  point.x = x;
+  point.y = y;
+  point.z = z;
+  point.r = r;
+  point.g = g;
+  point.b = b;
+  return point;
+}
+
 /*
    Function to transform lidar points to image and broadcast based on color
  */
 void PointPainting::lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud) {
   // tf_listener.lookupTransform("d435_color_optical_frame", "world", ros::Time(0), velodyne_to_camera); // target , source , time, tf::StampedTransform
+  
+  std::scoped_lock<std::mutex> lock(rgb_mutex_);
+  std::scoped_lock<std::mutex> lock(seg_mutex_);
 
-  ROS_INFO("start");
-  if (seg_image.empty())
+  // ROS_INFO("start");
+  if (seg_image_.empty())
   {
     ROS_WARN("Segmentation Image not loaded");
     return;
   }
 
+  painted_cloud_ = pcl::PointCloud<pcl::PointXYZRGB>::Ptr(new pcl::PointCloud<pcl::PointXYZRGB>); // change to local?
+
   cv::Mat buffer = cv::Mat::zeros(cv::Size(640, 480), CV_8UC3);
   cv::Mat depth = cv::Mat::zeros(cv::Size(640, 480), CV_8UC1);
-  painted_points.reserve(cloud->points.size());
+  painted_points_.reserve(cloud->points.size());
   BOOST_FOREACH (const pcl::PointXYZ& pt, cloud->points) {
     cv::Point uv;
     Eigen::Vector4f point;
@@ -167,11 +195,11 @@ void PointPainting::lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPt
       continue; 
 
 
-    cv::Vec3b class_color = seg_image.at<cv::Vec3b>(uv);
+    cv::Vec3b class_color = seg_image_.at<cv::Vec3b>(uv);
     // get color_map from yaml or whatever
     // find index based on color from color_map
     // int index = -1;
-    // ROS_INFO_STREAM("yeshas");
+
     int index = 0;
     int class_index = -1;
     for (auto &array : j["color_map"]) {
@@ -181,22 +209,31 @@ void PointPainting::lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPt
       }
       index++;
     }
-    painted_points.push_back(PointPainting::PtData(point[0], point[1], point[2], class_index));
+    painted_points_.push_back(PointPainting::PtData(point[0], point[1], point[2], class_index));
     
     if (buffer.at<cv::Vec3b>(uv) != cv::Vec3b(0, 0, 0)) { 
       if (rotated_point[2] <  depth.at<uchar>(uv)) {
         cv::circle(buffer, uv, 2, class_color, -1);
-        cv::circle(rgb_image, uv, 2, class_color, -1);
+        cv::circle(rgb_image_, uv, 2, class_color, -1);
         depth.at<uchar>(uv) = rotated_point[2];
+        pcl::PointXYZRGB color_point = get_colored_point(point[0], point[1], point[2], class_color[2], class_color[1], class_color[0]);
+        painted_cloud_->push_back(color_point);
       }
     } else {
       cv::circle(buffer, uv, 2, class_color, -1);
-      cv::circle(rgb_image, uv, 2, class_color, -1);
+      cv::circle(rgb_image_, uv, 2, class_color, -1);
       depth.at<uchar>(uv) = rotated_point[2];
+      pcl::PointXYZRGB color_point = get_colored_point(point[0], point[1], point[2], class_color[2], class_color[1], class_color[0]);
+      painted_cloud_->push_back(color_point);  
     }
   }
 
-  sensor_msgs::ImagePtr image = cv_bridge::CvImage(rgb_header, "bgr8", rgb_image).toImageMsg();
+  sensor_msgs::ImagePtr image = cv_bridge::CvImage(rgb_header_, "bgr8", rgb_image_).toImageMsg();
   painted_pts_pub_.publish(image);
-}
 
+  sensor_msgs::PointCloud2 rosCloud;
+  pcl::toROSMsg(*painted_cloud_, rosCloud);
+  rosCloud.header.frame_id = "world";
+  rosCloud.header.stamp = ros::Time::now();
+  lidar_pub_.publish(rosCloud);
+}

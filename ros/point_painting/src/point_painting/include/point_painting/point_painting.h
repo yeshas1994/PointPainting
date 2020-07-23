@@ -19,7 +19,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
 #include <nlohmann/json.hpp>
-
+#include <mutex>
 
 class PointPainting {
 public:
@@ -43,6 +43,7 @@ public:
     void image_callback(const sensor_msgs::ImageConstPtr &image);
     void lidar_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
     void callback(const sensor_msgs::ImageConstPtr &image, const sensor_msgs::ImageConstPtr &segmentation_image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
+    pcl::PointXYZRGB get_colored_point(float x, float y, float z, int r, int g, int b);
     void lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
 
 
@@ -56,9 +57,12 @@ private:
     image_transport::Subscriber inference_sub_;
     image_transport::Subscriber rgb_sub_;
     ros::Subscriber lidar_sub_;
+    ros::Publisher lidar_pub_;
 
+    // tf not implemented yet
     tf::TransformListener tf_listener;
-    tf::StampedTransform velodyne_to_camera;
+    tf::StampedTransform velodyne_to_camera; 
+
     std::string lidar_max_distance;
     std::string inference_engine;
     std::string json_path_;
@@ -72,10 +76,9 @@ private:
 
     // sensor_msgs::PointCloud2::Ptr lidar_scans;
     // std::vector<pcl::PointXYZ> lidar_points;
-    cv::Mat rgb_image;
-    std_msgs::Header rgb_header;
-    cv::Mat seg_image;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+    std::mutex rgb_mutex_, seg_mutex_;
+    cv::Mat rgb_image_, seg_image_;
+    std_msgs::Header rgb_header_, lidar_header_;
     Eigen::Matrix3f K;
     Eigen::Matrix<float, 3, 4> P;
     Eigen::Matrix4f transform;
@@ -83,7 +86,10 @@ private:
     std::string camera_topic_;
     std::string inference_topic_;
     std::string camera_frame_;
-    std::vector<PtData> painted_points;
+    std::vector<PtData> painted_points_;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_;
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr painted_cloud_;
+    
     // point vectors buffers
 
 };

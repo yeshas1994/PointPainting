@@ -8,6 +8,7 @@
 #include <cv_bridge/cv_bridge.h>
 
 #include <torch/script.h> // One-stop header.
+#include <torch/torch.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>

@@ -20,6 +20,8 @@
 #include <opencv2/core.hpp>
 #include <nlohmann/json.hpp>
 #include <mutex>
+#include <torch/script.h>
+#include <torch/torch.h> 
 
 class PointPainting {
 public:
@@ -36,43 +38,44 @@ public:
             float z;
             uint8_t class_idx;
     };
-
 public:
     PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private); 
     void segmentation_callback(const sensor_msgs::ImageConstPtr &image);
     void image_callback(const sensor_msgs::ImageConstPtr &image);
     void lidar_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
-    void callback(const sensor_msgs::ImageConstPtr &image, const sensor_msgs::ImageConstPtr &segmentation_image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
+    void callback(const sensor_msgs::ImageConstPtr &image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
     pcl::PointXYZRGB get_colored_point(float x, float y, float z, int r, int g, int b);
     void lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
+    cv::Mat run_inference();
 
 
 private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
-    nlohmann::json j;
+    nlohmann::json j_;
 
     image_transport::Publisher painted_pts_pub_;
     image_transport::ImageTransport it;
-    image_transport::Subscriber inference_sub_;
-    image_transport::Subscriber rgb_sub_;
-    ros::Subscriber lidar_sub_;
     ros::Publisher lidar_pub_;
 
     // tf not implemented yet
     tf::TransformListener tf_listener;
     tf::StampedTransform velodyne_to_camera; 
+    message_filters::Subscriber<sensor_msgs::Image> image_sub_;
+    message_filters::Subscriber<sensor_msgs::Image> inference_sub_;
+    message_filters::Subscriber< pcl::PointCloud<pcl::PointXYZ> > lidar_sub_;
+    typedef message_filters::sync_policies::ApproximateTime< sensor_msgs::Image, pcl::PointCloud<pcl::PointXYZ> > sync_policy;
+    typedef message_filters::Synchronizer<sync_policy> sync;
+    boost::shared_ptr<sync> sync_;
 
     std::string lidar_max_distance;
     std::string inference_engine;
     std::string json_path_;
-
-    // message_filters::Subscriber<sensor_msgs::Image> image_sub_;
-    // message_filters::Subscriber<sensor_msgs::Image> inference_sub_;
-    // message_filters::Subscriber< pcl::PointCloud<pcl::PointXYZ> > lidar_sub_;
-    // typedef message_filters::sync_policies::ApproximateTime< sensor_msgs::Image, sensor_msgs::Image, pcl::PointCloud<pcl::PointXYZ> > sync_policy;
-    // typedef message_filters::Synchronizer<sync_policy> sync;
-    // boost::shared_ptr<sync> sync_;
+    std::string torch_engine_;
+    std::vector<float> mean_;
+    std::vector<float> std_;
+    cv::Scalar rgb_mean_;
+    cv::Scalar rgb_std_;
 
     // sensor_msgs::PointCloud2::Ptr lidar_scans;
     // std::vector<pcl::PointXYZ> lidar_points;
@@ -86,10 +89,8 @@ private:
     std::string camera_topic_;
     std::string inference_topic_;
     std::string camera_frame_;
-    std::vector<PtData> painted_points_;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_;
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr painted_cloud_;
-    
+    bool use_cuda_;
+    std::array<std::array<uchar, 3>, 12> color_map{}; 
     // point vectors buffers
 
 };

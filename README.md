@@ -37,7 +37,9 @@ This node also saves the colored points in a vector as [x, y, z, class].
 ```
 roslaunch point_painting point_painting.launch
 ```
-
+Do remember to edit the `config.yaml` file as required 
+- change the paths 
+- change `use_cuda` as required
 
 
 Currently the ros package can read from topics/videos on ros while the standalone package relies on files (.pcd/.png/etc)

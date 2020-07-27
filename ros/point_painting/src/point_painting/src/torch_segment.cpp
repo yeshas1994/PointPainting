@@ -18,12 +18,12 @@ TorchEngine::TorchEngine(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
     
     inference_pub_ = it.advertise("d435/color/inference_image", 1);
     rgb_sub_ = it.subscribe(camera_topic_, 100, &TorchEngine::image_callback, this);
-    rgb_sub_ = it.subscribe(camera_topic_, 100, 
-                            [this](const sensor_msgs::ImageConstPtr &image) {
-                                std::lock_guard<std::mutex> lock(rgb_mutex_);
-                                rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
-                                image_header_ = image->header;
-                            });
+    // rgb_sub_ = it.subscribe(camera_topic_, 100, 
+                            // [this](const sensor_msgs::ImageConstPtr &image) {
+                            //     std::lock_guard<std::mutex> lock(rgb_mutex_);
+                            //     rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
+                            //     image_header_ = image->header;
+                            // });
 }
 
 void TorchEngine::image_callback(const sensor_msgs::ImageConstPtr &image) 
@@ -38,7 +38,7 @@ void TorchEngine::image_callback(const sensor_msgs::ImageConstPtr &image)
 void TorchEngine::run_inference() 
 {
     // ROS_INFO_STREAM(torch_engine_);
-    std::lock_guard<std::mutex> lock(rgb_mutex_);
+    // std::lock_guard<std::mutex> lock(rgb_mutex_);
     torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
     torch::jit::script::Module module;
     try {

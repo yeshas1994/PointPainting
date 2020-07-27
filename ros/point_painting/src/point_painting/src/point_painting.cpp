@@ -131,7 +131,7 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl:
     for (auto &array : j_["color_map"]) {
       if (class_color == cv::Vec3b(array[0], array[1], array[2])) {
         class_index = index;
-        ROS_INFO("point found!!");
+        // ROS_INFO("point found!!");
         break;
       }
       index++;
@@ -155,10 +155,10 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl:
   }
 
   std_msgs::Header image_header;
-  image_header.frame_id = "d435_color_optical_frame";
+  image_header.frame_id = camera_frame_;
   image_header.stamp = ros::Time::now();
-  cv::imshow("rgb", painted_image);
-  cv::waitKey(100);
+  // cv::imshow("rgb", painted_image);
+  // cv::waitKey(100);
   sensor_msgs::ImagePtr image_msg = cv_bridge::CvImage(image_header, "bgr8", painted_image).toImageMsg();
   painted_pts_pub_.publish(image_msg);
 

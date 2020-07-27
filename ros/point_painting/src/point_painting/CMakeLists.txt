@@ -47,11 +47,26 @@ add_executable(point_painting_node
   src/point_painting.cpp
 )
 
+add_executable(segmentation_node
+  node/torch_segment_node.cpp
+  src/torch_segment.cpp
+)
+
+target_link_libraries(segmentation_node
+  ${OpenCV_LIBS}
+  ${catkin_LIBRARIES} 
+  ${TORCH_LIBRARIES}
+  ${PCL_LIBRARIES} 
+)
+
 target_link_libraries(point_painting_node
   ${OpenCV_LIBS}
   ${catkin_LIBRARIES} 
   ${TORCH_LIBRARIES}
   ${PCL_LIBRARIES} 
 )
+
+
 set_property(TARGET point_painting_node PROPERTY CXX_STANDARD 14)
+set_property(TARGET segmentation_node PROPERTY CXX_STANDARD 14)
 

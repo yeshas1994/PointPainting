@@ -1,14 +1,14 @@
-file_assets/
 build/
 .vscode/
 old/
-ros/**/libtorch/
-ros/**/.bag
-ros/**/devel/
-ros/**/build/
-test_files/**/libtorch/
-test_files/**/build/
-test_files/**/libtorch/
+point_painting/**/libtorch/
+point_painting/**/.bag
+point_painting/**/devel/
+point_painting/**/build/
+standalone/**/libtorch/
+standalone/**/build/
+standalone/**/libtorch/
+standalone/**/file_assets/
 *.bag
 *.swp
 

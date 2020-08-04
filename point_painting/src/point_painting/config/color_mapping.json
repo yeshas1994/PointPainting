@@ -11,8 +11,7 @@
         [107, 142, 35 ],
         [152, 251, 15 ],
         [0,   130, 180],
-        [220, 20,  60 ]    
+        [220, 20,  60 ]
     ],
-
     "torch_engine": "/home/yeshas/PointPainting/test_files/torch_script/fcn32_torchscript.pt"
 }

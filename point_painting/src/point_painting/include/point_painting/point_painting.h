@@ -27,16 +27,14 @@ class PointPainting {
 public:
     struct PtData {
         public:
-            PtData(float xIn, float yIn, float zIn, uint8_t classIn)
-            : x(xIn), y(yIn), z(zIn), class_idx(classIn)
+            PtData(float xIn, float yIn, float zIn, int idx)
+            : x(xIn), y(yIn), z(zIn), idx(idx)
             {};
-
             PtData() = default;
-
             float x;
             float y;
             float z;
-            uint8_t class_idx;
+            int idx;
     };
 public:
     PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private); 
@@ -49,9 +47,11 @@ public:
     void paint_points();
     void lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
     cv::Mat run_inference();
-
+    void create_costmap();
 
 private:
+    void bresenham(int x1, int y1, int x2, int y2);
+
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
     nlohmann::json j_;
@@ -82,15 +82,22 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_;
     cv::Mat rgb_image_, seg_image_;
     std_msgs::Header rgb_header_, lidar_header_;
+    // camera/transform for deprojection
     Eigen::Matrix3f K;
     Eigen::Matrix<float, 3, 4> P;
     Eigen::Matrix4f transform;
+
+    std::vector<PointPainting::PtData> painted_points_;
+    Eigen::MatrixXf costmap_;
+    cv::Mat costmap_image_;
     std::string velodyne_topic_;
     std::string camera_topic_;
     std::string inference_topic_;
     std::string camera_frame_;
     bool use_cuda_;
-    std::array<std::array<uchar, 3>, 12> color_map{}; 
-    // point vectors buffers
-
+    std::array<std::array<uchar, 3>, 12> color_map_{}; 
+    float world_costmap_size_;
+    float costmap_resolution_;
+    int costmap_size_;
+    float size_;
 };

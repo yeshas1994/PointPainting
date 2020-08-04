@@ -16,10 +16,14 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
   nh_private_.getParam("use_cuda", use_cuda_);
   nh_private_.getParam("mean", mean_);
   nh_private_.getParam("std",  std_);
+  nh_private_.getParam("costmap_size", world_costmap_size_); // in m
+  nh_private_.getParam("costmap_resolution", costmap_resolution_);
 
+  
   rgb_mean_ = cv::Scalar(mean_[0], mean_[1], mean_[2]);
   rgb_std_ = cv::Scalar(std_[0] ,std_[1], std_[2]);
-
+  size_ = (world_costmap_size_ / costmap_resolution_);
+  costmap_size_  = static_cast<int>(size_);
   std::ifstream json_in(json_path_);
   j_ = nlohmann::json::parse(json_in);
   
@@ -61,7 +65,7 @@ void PointPainting::filter_pointcloud(const pcl::PointCloud<pcl::PointXYZ>::Cons
   pcl::PassThrough<pcl::PointXYZ> pass;                                                                                                                                                                          
   pass.setInputCloud(cloud_input);                                                                                                                                                                             
   pass.setFilterFieldName("x");                                                                                                                                                                                  
-  pass.setFilterLimits(0.0, 5.0);                                                                                                                                                                          
+  pass.setFilterLimits(0.0, world_costmap_size_);                                                                                                                                                                          
   pass.filter(*cloud_); 
 }
 
@@ -70,11 +74,10 @@ void PointPainting::paint_points() {
   // Declare variables
   cv::Mat painted_image = rgb_image_.clone();
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr painted_cloud(new pcl::PointCloud<pcl::PointXYZRGB>); 
-  std::vector<PointPainting::PtData> painted_points;
   cv::Mat buffer = cv::Mat::zeros(cv::Size(640, 480), CV_8UC3);
   cv::Mat depth = cv::Mat::zeros(cv::Size(640, 480), CV_8UC1);
-  
-
+  painted_points_.clear();
+  painted_points_.reserve(cloud_->points.size());
   // Main loop 
   BOOST_FOREACH (const pcl::PointXYZ& pt, cloud_->points) {
     cv::Point uv;
@@ -96,18 +99,18 @@ void PointPainting::paint_points() {
 
     // check color of segmentation for specific pixel
     cv::Vec3b class_color = seg_image_.at<cv::Vec3b>(uv);
-    // get color_map from yaml or whatever
+    // ROS_INFO_STREAM(class_color);
+
+    // get color_map and apply to respective classes
     int index = 0;
-    int class_index = -1;
     for (auto &array : j_["color_map"]) {
-      if (class_color == cv::Vec3b(array[0], array[1], array[2])) {
-        class_index = index;
-        // ROS_INFO("point found!!");
+      if (class_color == cv::Vec3b(array[2], array[1], array[0])) {
+        PointPainting::PtData new_point = PointPainting::PtData(point[0], point[1], point[2], index);
+        painted_points_.push_back(new_point);
         break;
       }
       index++;
     }
-    painted_points.push_back(PointPainting::PtData(point[0], point[1], point[2], class_index));
 
     // create new painted point if new pixel is closer than currently exisiting pixel
     if (buffer.at<cv::Vec3b>(uv) != cv::Vec3b(0, 0, 0)) { 
@@ -127,6 +130,8 @@ void PointPainting::paint_points() {
     }
   }
   
+
+  // Publish topics
   std_msgs::Header image_header;
   image_header.frame_id = camera_frame_;
   image_header.stamp = ros::Time::now();
@@ -196,7 +201,6 @@ cv::Mat PointPainting::run_inference()
     //faster than memcpy (for some reason)
     uchar* ptr = reinterpret_cast<uchar*>(output.data_ptr());
     cv::Mat result_image(cv::Size(512, 256), CV_8UC1, ptr);
-    // free(output.data_ptr());
 
 
     // time = std::chrono::steady_clock::now();
@@ -207,11 +211,9 @@ cv::Mat PointPainting::run_inference()
 
     int idx = 0;
     for (auto &array : j_["color_map"]) {
-      color_map[idx] = {array[0], array[1], array[2]};
+      color_map_[idx] = {array[0], array[1], array[2]};
       idx++;
     }
-    // for (auto &array : color_map) 
-    //   ROS_INFO("%d, %d, %d", array[0], array[1], array[2]);
 
     cv::Mat inference_image(cv::Size(512, 256), CV_8UC3, cv::Scalar(0, 0, 0));
 
@@ -220,7 +222,7 @@ cv::Mat PointPainting::run_inference()
 			for (int c = 0; c < 512; c++) 
       {
         int color_map_index = result_image.at<uchar>(cv::Point(c, r));
-        std::array<uchar, 3> class_color = color_map[color_map_index];
+        std::array<uchar, 3> class_color = color_map_[color_map_index];
         inference_image.at<cv::Vec3b>(cv::Point(c, r)) = cv::Vec3b(class_color[2], class_color[1], class_color[0]);
       }
     }
@@ -229,17 +231,94 @@ cv::Mat PointPainting::run_inference()
     float postprocess_time = duration / 1e9;
     ROS_INFO_STREAM("Postprocess Time: " << postprocess_time);
 
-
-    // ROS_INFO("done");
-    // result_image.forEach<uchar>(
-    //   [inference_image, color_map](uchar &pixel, const int* position) mutable 
-    //   {
-    //     inference_image.at<cv::Vec3b>(cv::Point(position[0], position[1])) = cv::Vec3b(color_map[pixel][0], color_map[pixel][1], color_map[pixel][2]);
-    //   }); 
-
     cv::resize(inference_image, inference_image, cv::Size(640, 480), cv::INTER_NEAREST);
 
     return inference_image;
+}
+
+void PointPainting::create_costmap() {
+  ROS_INFO_STREAM(world_costmap_size_ << " " << costmap_resolution_);
+  costmap_.resize(costmap_size_, costmap_size_);
+  costmap_.setZero();
+  costmap_image_ = cv::Mat(cv::Size(costmap_size_, costmap_size_), CV_8UC3);
+  cv::Mat large_costmap;
+  // cv::resize(costmap_image_,costmap_image_,cv::Size(10, 10));
+  int robot_x = costmap_size_ / 2;
+  int robot_y = costmap_size_ - 1;
+  costmap_image_.setTo(cv::Vec3b(0, 0, 0));
+  cv::circle(costmap_image_, cv::Point(robot_x, robot_y), 5, cv::Vec3b(155, 0, 255), -1);
+  for (auto point : painted_points_) {
+    std::pair<float, float> costmap_point;
+    // only check for y since x axis was dealt with during filter
+    if (point.y >= 5 || point.y <= -5) { 
+    //   costmap_point.first = -1;
+    //   costmap_point.second = -1;
+      continue;
+    }
+
+    costmap_point.first = std::floor((-point.y + (world_costmap_size_ / 2.0f)) / costmap_resolution_);
+    costmap_point.second = std::floor((-point.x + world_costmap_size_) / costmap_resolution_);
+    if (costmap_point.first >= costmap_size_ || costmap_point.second >= costmap_size_)
+      continue;
+    // ROS_INFO_STREAM("map index " << costmap_point << "world index " << point.y << " " << point.x);
+    if (point.idx == 2) {
+      // continue;
+      costmap_(costmap_point.first, costmap_point.second) = 1;
+      std::array<uchar, 3> class_color = color_map_[point.idx];
+      costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) = cv::Vec3b(0, 255, 0);
+    } else {
+      costmap_(costmap_point.first, costmap_point.second) = 10;
+      std::array<uchar, 3> class_color = color_map_[point.idx];
+      bresenham(costmap_point.first, costmap_point.second, robot_x, robot_y);
+      costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) \
+            = cv::Vec3b(class_color[2], class_color[1], class_color[0]);
+    }
+  }
+  // large_costmap.setTo(cv::Vec3b(0,0,0));
+  // cv::resize(costmap_image_, large_costmap, cv::Size(500,500), CV_INTER_LINEAR);
+  // cv::destroyAllWindows();
+  cv::imshow("Obstacle Costmap", costmap_image_);
+  cv::waitKey(500);
+  // cv::destroyAllWindows();
+}
+
+void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
+
+  bool steep = std::abs(y2 - y1) > std::abs(x2 - x1);
+  if (steep) {
+    std::swap(x1, y1);
+    std::swap(x2, y2);
+  }
+
+  if (x1 > x2) {
+    std::swap(x1, x2);
+    std::swap(y1, y2);
+  }
+
+  const int dx = std::abs(x2 - x1);
+  const int dy = std::abs(y2 - y1);
+  float error = dx / 2;
+  const int ystep = (y1 < y2) ? 1 : -1;
+  
+  int y = y1;
+  
+  for (int x = x1; x <= x2; x++) 
+  { 
+    if (steep)
+      costmap_image_.at<cv::Vec3b>(cv::Point(y, x)) = cv::Vec3b(255, 255, 255);  
+    else
+      costmap_image_.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 255, 255);  
+    // Add slope to increment angle formed 
+    error -= dy;
+
+    // Slope error reached limit, time to 
+    // increment y and update slope error. 
+    if (error < 0) 
+    { 
+        y += ystep; 
+        error += dx;
+    } 
+  } 
 }
 
 void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input) 
@@ -264,4 +343,5 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl:
 
   filter_pointcloud(cloud_input);
   paint_points();
+  create_costmap();
 }

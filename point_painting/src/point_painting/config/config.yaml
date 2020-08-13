@@ -8,9 +8,10 @@ std: [0.225, 0.225, 0.225]
 use_cuda: False
 
 camera_frame: "d435_color_optical_frame"
-costmap_size: 20.0
+costmap_size: 5.0
 costmap_resolution: 0.05
-# change the below paths as required
 
-serialized_engine: "/home/yeshas/PointPainting/point_painting/src/point_painting/assets/unet_office.pt"
+# change the below paths as required
+environment: "park"
+serialized_engine: "/home/yeshas/PointPainting/point_painting/src/point_painting/assets/fcn32_torchscript.pt"
 json_path: "/home/yeshas/PointPainting/point_painting/src/point_painting/config/color_mapping.json"

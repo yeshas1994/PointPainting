@@ -73,6 +73,8 @@ private:
     std::string lidar_max_distance;
     std::string inference_engine;
     std::string json_path_;
+    std::string env_;
+    int path_index; // this is for freespace path (depends on env)
     std::string torch_engine_;
     std::vector<float> mean_;
     std::vector<float> std_;

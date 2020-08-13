@@ -18,12 +18,17 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
   nh_private_.getParam("std",  std_);
   nh_private_.getParam("costmap_size", world_costmap_size_); // in m
   nh_private_.getParam("costmap_resolution", costmap_resolution_);
-
+  nh_private_.getParam("environment", env_);
   
   rgb_mean_ = cv::Scalar(mean_[0], mean_[1], mean_[2]);
   rgb_std_ = cv::Scalar(std_[0] ,std_[1], std_[2]);
   size_ = (world_costmap_size_ / costmap_resolution_);
   costmap_size_  = static_cast<int>(size_);
+  if (env_ == "office")
+    path_index = 1;
+  else 
+    path_index = 2;
+
   std::ifstream json_in(json_path_);
   j_ = nlohmann::json::parse(json_in);
   
@@ -135,8 +140,6 @@ void PointPainting::paint_points() {
   std_msgs::Header image_header;
   image_header.frame_id = camera_frame_;
   image_header.stamp = ros::Time::now();
-  // cv::imshow("rgb", painted_image);
-  // cv::waitKey(100);
   sensor_msgs::ImagePtr image_msg = cv_bridge::CvImage(image_header, "bgr8", painted_image).toImageMsg();
   painted_pts_pub_.publish(image_msg);
 
@@ -244,7 +247,6 @@ void PointPainting::create_costmap() {
   costmap_.setZero();
   costmap_image_ = cv::Mat(cv::Size(costmap_size_, costmap_size_), CV_8UC3);
   cv::Mat large_costmap;
-  // cv::resize(costmap_image_,costmap_image_,cv::Size(10, 10));
   int robot_x = costmap_size_ / 2;
   int robot_y = costmap_size_ - 1;
   costmap_image_.setTo(cv::Vec3b(0, 0, 0));
@@ -252,9 +254,7 @@ void PointPainting::create_costmap() {
   for (auto point : painted_points_) {
     std::pair<float, float> costmap_point;
     // only check for y since x axis was dealt with during filter
-    if (point.y >= 5 || point.y <= -5) { 
-    //   costmap_point.first = -1;
-    //   costmap_point.second = -1;
+    if (point.y >= world_costmap_size_ / 2.0f || point.y <= -world_costmap_size_ / 2.0f) { 
       continue;
     }
 
@@ -263,25 +263,23 @@ void PointPainting::create_costmap() {
     if (costmap_point.first >= costmap_size_ || costmap_point.second >= costmap_size_)
       continue;
     // ROS_INFO_STREAM("map index " << costmap_point << "world index " << point.y << " " << point.x);
-    if (point.idx == 2) {
+    if (point.idx == path_index) { // 1 for office & 2 for park
       // continue;
       costmap_(costmap_point.first, costmap_point.second) = 1;
       std::array<uchar, 3> class_color = color_map_[point.idx];
+      bresenham(costmap_point.first, costmap_point.second, robot_x, robot_y);
       costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) = cv::Vec3b(0, 255, 0);
     } else {
       costmap_(costmap_point.first, costmap_point.second) = 10;
       std::array<uchar, 3> class_color = color_map_[point.idx];
-      bresenham(costmap_point.first, costmap_point.second, robot_x, robot_y);
       costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) \
             = cv::Vec3b(class_color[2], class_color[1], class_color[0]);
     }
   }
-  // large_costmap.setTo(cv::Vec3b(0,0,0));
-  // cv::resize(costmap_image_, large_costmap, cv::Size(500,500), CV_INTER_LINEAR);
-  // cv::destroyAllWindows();
-  cv::imshow("Obstacle Costmap", costmap_image_);
-  cv::waitKey(500);
-  // cv::destroyAllWindows();
+  
+  cv::resize(costmap_image_, large_costmap, cv::Size(500,500), cv::INTER_LINEAR);
+  cv::imshow("Obstacle Costmap", large_costmap);
+  cv::waitKey(10);
 }
 
 void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
@@ -306,10 +304,17 @@ void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
   
   for (int x = x1; x <= x2; x++) 
   { 
-    if (steep)
-      costmap_image_.at<cv::Vec3b>(cv::Point(y, x)) = cv::Vec3b(255, 255, 255);  
-    else
-      costmap_image_.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 255, 255);  
+    if (steep) {
+      if (costmap_(y, x) == 0) {
+        costmap_(y, x) = 1;
+        costmap_image_.at<cv::Vec3b>(cv::Point(y, x)) = cv::Vec3b(255, 255, 255);  
+      }
+    } else {
+      if (costmap_(x, y) == 0) {
+        costmap_(x, y) = 1;
+        costmap_image_.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 255, 255);  
+      }
+    }
     // Add slope to increment angle formed 
     error -= dy;
 

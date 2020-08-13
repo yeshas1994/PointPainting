@@ -39,7 +39,7 @@ void TorchEngine::run_inference()
 {
     // ROS_INFO_STREAM(torch_engine_);
     // std::lock_guard<std::mutex> lock(rgb_mutex_);
-    torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
+    torch::Device device(use_cuda_ ? torch::kCUDA : torch::kCPU);
     torch::jit::script::Module module;
     try {
         // Deserialize the ScriptModule from a file using torch::jit::load().
@@ -78,7 +78,7 @@ void TorchEngine::run_inference()
     std::memcpy((void *) result_image.data, output.data_ptr(), sizeof(torch::kU8) * output.numel());
     
     // colormapping
-    result_image.convertTo(inference_image, CV_8UC3, (255.0/12.0));
+    result_image.convertTo(inference_image, CV_8UC3, (255.0/2.0));
     cv::applyColorMap(inference_image, inference_image, cv::COLORMAP_RAINBOW);
     // cv::imshow("infer", inference_image);
     // cv::waitKey(0);

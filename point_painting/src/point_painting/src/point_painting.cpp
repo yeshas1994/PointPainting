@@ -152,6 +152,7 @@ void PointPainting::paint_points() {
 cv::Mat PointPainting::run_inference() 
 {
     cv::Mat rgb_image = rgb_image_.clone();
+    ROS_INFO("run inference");
     torch::Device device(torch::kCPU);
     if (use_cuda_)
     {
@@ -159,6 +160,8 @@ cv::Mat PointPainting::run_inference()
     } 
 
     torch::jit::script::Module module;
+
+    ROS_INFO_STREAM(torch_engine_);
     try {
         // Deserialize the ScriptModule from a file using torch::jit::load().
         module = torch::jit::load(torch_engine_);
@@ -201,7 +204,6 @@ cv::Mat PointPainting::run_inference()
     //faster than memcpy (for some reason)
     uchar* ptr = reinterpret_cast<uchar*>(output.data_ptr());
     cv::Mat result_image(cv::Size(512, 256), CV_8UC1, ptr);
-
 
     // time = std::chrono::steady_clock::now();
     // std::memcpy((void*)result_image.data, output.data_ptr(), sizeof(torch::kU8) * output.numel());
@@ -326,19 +328,20 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl:
   ROS_INFO("start");
   // for headers use ros::Time::now();
   rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
-  seg_image_ = run_inference();
 
-  if (seg_image_.empty())
-  {
-    ROS_WARN("Segmentation Image not loaded");
-    return;
-  }
 
   if (rgb_image_.empty()) 
   {
     ROS_WARN("RGB Image not loaded");
     return;
 
+  }
+  seg_image_ = run_inference();
+  
+  if (seg_image_.empty())
+  {
+    ROS_WARN("Segmentation Image not loaded");
+    return;
   }
 
   filter_pointcloud(cloud_input);

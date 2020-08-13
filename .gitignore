@@ -1,4 +1,5 @@
 build/
+.catkin_workspace
 .vscode/
 old/
 point_painting/**/libtorch/
@@ -11,4 +12,4 @@ standalone/**/libtorch/
 standalone/**/file_assets/
 *.bag
 *.swp
-
+*.pt

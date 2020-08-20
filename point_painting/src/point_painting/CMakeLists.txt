@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
 	sensor_msgs
 	tf	
   message_filters
+  nav_msgs
 )
 
 set(Caffe2_DIR "include/libtorch/share/cmake/Caffe2")

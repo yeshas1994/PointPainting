@@ -4,8 +4,11 @@
 #include <std_msgs/Header.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <image_transport/image_transport.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <cv_bridge/cv_bridge.h>
+#include <geometry_msgs/Pose.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -59,6 +62,7 @@ private:
     image_transport::Publisher painted_pts_pub_;
     image_transport::ImageTransport it;
     ros::Publisher lidar_pub_;
+    ros::Publisher map_pub_;
 
     // tf not implemented yet
     tf::TransformListener tf_listener;
@@ -91,6 +95,8 @@ private:
 
     std::vector<PointPainting::PtData> painted_points_;
     Eigen::MatrixXf costmap_;
+    std::vector<signed char> occ;
+    nav_msgs::OccupancyGrid costmap_viz_;
     cv::Mat costmap_image_;
     std::string velodyne_topic_;
     std::string camera_topic_;

@@ -24,6 +24,7 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
   rgb_std_ = cv::Scalar(std_[0] ,std_[1], std_[2]);
   size_ = (world_costmap_size_ / costmap_resolution_);
   costmap_size_  = static_cast<int>(size_);
+
   if (env_ == "office")
     path_index = 1;
   else 
@@ -48,6 +49,7 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
             0.00000000e+00,  0.00000000e+00,   0.00000000e+00,   1.00000000e+00;
   
   painted_pts_pub_ = it.advertise("d435/color/painted_points", 1);
+  map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("grid", 100);
   lidar_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("painted_cloud", 1);
   lidar_sub_.subscribe(nh_, velodyne_topic_, 1);
   image_sub_.subscribe(nh_, camera_topic_, 1);
@@ -242,41 +244,78 @@ cv::Mat PointPainting::run_inference()
 }
 
 void PointPainting::create_costmap() {
-  ROS_INFO_STREAM(world_costmap_size_ << " " << costmap_resolution_);
   costmap_.resize(costmap_size_, costmap_size_);
   costmap_.setZero();
+
+  // transformations due to costmap_point being in opencv coordinates
+  tf2::Quaternion q;
+  q.setRPY(0, 0, -M_PI / 2.0f);
+  q.normalize();
+
+  costmap_viz_.header.frame_id = "map";
+  costmap_viz_.info.width = costmap_size_;
+  costmap_viz_.info.height = costmap_size_;
+  costmap_viz_.info.resolution = costmap_resolution_;
+  costmap_viz_.header.stamp.sec = ros::Time::now().sec;
+
+  costmap_viz_.info.origin.position.z = 0;
+  costmap_viz_.info.origin.position.x = 0;
+  costmap_viz_.info.origin.position.y = 0;
+  // costmap_viz_.info.origin.orientation.w = q[3];
+  // costmap_viz_.info.origin.orientation.x = q[0];
+  // costmap_viz_.info.origin.orientation.y = q[1];
+  // costmap_viz_.info.origin.orientation.z = q[2];
+  
+  occ.resize(costmap_size_ * costmap_size_);
+  std::fill(occ.begin(), occ.end(), 100);
+  
+  // costmap stuff
   costmap_image_ = cv::Mat(cv::Size(costmap_size_, costmap_size_), CV_8UC3);
   cv::Mat large_costmap;
   int robot_x = costmap_size_ / 2;
   int robot_y = costmap_size_ - 1;
   costmap_image_.setTo(cv::Vec3b(0, 0, 0));
+  // robot location
   cv::circle(costmap_image_, cv::Point(robot_x, robot_y), 5, cv::Vec3b(155, 0, 255), -1);
   for (auto point : painted_points_) {
-    std::pair<float, float> costmap_point;
+    std::pair<int, int> costmap_point;
+    std::pair<int, int> grid_point;
     // only check for y since x axis was dealt with during filter
     if (point.y >= world_costmap_size_ / 2.0f || point.y <= -world_costmap_size_ / 2.0f) { 
       continue;
     }
 
-    costmap_point.first = std::floor((-point.y + (world_costmap_size_ / 2.0f)) / costmap_resolution_);
-    costmap_point.second = std::floor((-point.x + world_costmap_size_) / costmap_resolution_);
+    // geometry_msgs::Pose pc_point;
+    // costmap_point.first = std::floor((-point.y + (world_costmap_size_ / 2.0f)) / costmap_resolution_);
+    // costmap_point.second = std::floor((-point.x + world_costmap_size_) / costmap_resolution_);
+
+    // pc_point.position.x = std::floor(point.x / costmap_resolution_);
+    // pc_point.position.y = std::floor((point.y + 2.5) / costmap_resolution_);
+
+    // grid_point.first = std::floor((-point.y + 2.5) / costmap_resolution_);
+    // grid_point.second = std::floor((point.x) / costmap_resolution_);
+    grid_point.first = std::floor((-point.y + 2.5) / costmap_resolution_);
+    grid_point.second = std::floor(point.x / costmap_resolution_);
     if (costmap_point.first >= costmap_size_ || costmap_point.second >= costmap_size_)
       continue;
-    // ROS_INFO_STREAM("map index " << costmap_point << "world index " << point.y << " " << point.x);
+    // ROS_INFO_STREAM("map index " << grid_point << "world index " << point.y << " " << point.x);
     if (point.idx == path_index) { // 1 for office & 2 for park
       // continue;
       costmap_(costmap_point.first, costmap_point.second) = 1;
-      std::array<uchar, 3> class_color = color_map_[point.idx];
-      bresenham(costmap_point.first, costmap_point.second, robot_x, robot_y);
+      occ.at(grid_point.first + grid_point.second * costmap_size_) = 1;
+      // bresenham(grid_point.first, grid_point.second, robot_x, robot_y);
       costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) = cv::Vec3b(0, 255, 0);
     } else {
       costmap_(costmap_point.first, costmap_point.second) = 10;
       std::array<uchar, 3> class_color = color_map_[point.idx];
+      occ.at(grid_point.first + grid_point.second * costmap_size_) = 100;
       costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) \
             = cv::Vec3b(class_color[2], class_color[1], class_color[0]);
     }
   }
   
+  costmap_viz_.data = occ;
+  map_pub_.publish(costmap_viz_);
   cv::resize(costmap_image_, large_costmap, cv::Size(500,500), cv::INTER_LINEAR);
   cv::imshow("Obstacle Costmap", large_costmap);
   cv::waitKey(10);
@@ -305,15 +344,17 @@ void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
   for (int x = x1; x <= x2; x++) 
   { 
     if (steep) {
-      if (costmap_(y, x) == 0) {
-        costmap_(y, x) = 1;
-        costmap_image_.at<cv::Vec3b>(cv::Point(y, x)) = cv::Vec3b(255, 255, 255);  
-      }
+      // if (costmap_(y, x) == 0) {
+      //   costmap_(y, x) = 1;
+      //   costmap_image_.at<cv::Vec3b>(cv::Point(y, x)) = cv::Vec3b(255, 255, 255);  
+        occ.at(y * costmap_size_ + x) = 1;
+      // }
     } else {
-      if (costmap_(x, y) == 0) {
-        costmap_(x, y) = 1;
-        costmap_image_.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 255, 255);  
-      }
+      // if (costmap_(x, y) == 0) {
+      //   costmap_(x, y) = 1;
+      //   costmap_image_.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 255, 255);  
+        occ.at(x * costmap_size_ + y) = 1;
+      // }
     }
     // Add slope to increment angle formed 
     error -= dy;

@@ -5,7 +5,7 @@
     <!-- passthrough filter to remove far away points-->
     <node pkg="tf" type="static_transform_publisher" name="world2cam" args="0.04 -0.043 0.1 1.57 3.14 1.57 world d435_color_optical_frame 10" />
     <node pkg="tf" type="static_transform_publisher" name="world2velo" args="0 0 0 0 0 0 world velodyne 10" />
-
+    <node pkg="tf" type="static_transform_publisher" name="velo2map" args="0 2.5 0 -1.57 0 0 velodyne map 10" />
     <node pkg="rosbag" type="play" name="player" args="-l --clock $(find point_painting)/assets/$(arg bag)" />
 
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find point_painting)/assets/rviz_pointpaint.rviz" />

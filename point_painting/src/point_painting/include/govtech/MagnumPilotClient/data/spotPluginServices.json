@@ -1,0 +1,20 @@
+{
+	"plugins" : {
+		"RealSense" :
+		{
+			"address" : "localhost",
+			"port" : 9022,
+			"active" : false
+		},
+    "ThermalCam": {
+      "address": "localhost",
+      "port": 9022,
+      "active": false
+    },
+    "Cmd": {
+      "address": "10.8.1.1",
+      "port": 9022,
+      "active": true
+    }
+	}
+}

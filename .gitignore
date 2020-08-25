@@ -10,6 +10,9 @@ standalone/**/libtorch/
 standalone/**/build/
 standalone/**/libtorch/
 standalone/**/file_assets/
+standalone/*
+inference_server/build/
+inference_server/include/libtorch/*
 *.bag
 *.swp
 *.pt

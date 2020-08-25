@@ -23,6 +23,11 @@
 #include <opencv2/core.hpp>
 #include <nlohmann/json.hpp>
 #include <mutex>
+#include <thread> 
+#include <dosCore/wsRobotClient.h>
+#include <dosCore/wsServer.h>
+#include <dosCore/commandPacket.h>
+
 #include <torch/script.h>
 #include <torch/torch.h> 
 
@@ -42,7 +47,7 @@ public:
 public:
     PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private); 
     void segmentation_callback(const sensor_msgs::ImageConstPtr &image);
-    void image_callback(const sensor_msgs::ImageConstPtr &image);
+    void debug(const sensor_msgs::ImageConstPtr &image);
     void lidar_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
     void callback(const sensor_msgs::ImageConstPtr &image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input);
     pcl::PointXYZRGB get_colored_point(float x, float y, float z, int r, int g, int b);
@@ -74,6 +79,8 @@ private:
     typedef message_filters::Synchronizer<sync_policy> sync;
     boost::shared_ptr<sync> sync_;
 
+    image_transport::Subscriber image_sub_debug_;
+
     std::string lidar_max_distance;
     std::string inference_engine;
     std::string json_path_;
@@ -103,6 +110,12 @@ private:
     std::string inference_topic_;
     std::string camera_frame_;
     bool use_cuda_;
+    bool use_server_;
+    bool first_ = true;
+    int serverPort;
+    std::mutex seg_lock;
+    std::string serverAddress;
+    std::shared_ptr<DosClient::WsRobotClient> client_handler;
     std::array<std::array<uchar, 3>, 12> color_map_{}; 
     float world_costmap_size_;
     float costmap_resolution_;

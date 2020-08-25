@@ -1,0 +1,9 @@
+{
+	"serverAddress" : "ws://localhost",
+	"serverPort" : 8765,
+    "commands" : {
+        "stand" : "111stand",
+        "sit" : "111sit",
+        "follow" : "111follow"
+    }
+} 

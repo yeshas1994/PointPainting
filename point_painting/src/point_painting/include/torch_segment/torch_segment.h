@@ -17,6 +17,11 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <dosCore/wsRobotClient.h>
+#include <dosCore/wsServer.h>
+#include <dosCore/commandPacket.h>
+
 
 class TorchEngine {
 private:
@@ -27,20 +32,29 @@ private:
     image_transport::Subscriber rgb_sub_;
 
     cv::Mat rgb_image_;
+    cv::Mat seg;
     std::mutex rgb_mutex_;
+    std::mutex seg_lock;
     std_msgs::Header image_header_;
-    std::string torch_engine_;
-    std::string camera_topic_;
+    std::string torch_engine_, camera_topic_, json_path_;
+    nlohmann::json j_;
+    std::array<std::array<uchar, 3>, 12> color_map_{}; 
     std::vector<float> mean_;
     std::vector<float> std_;
     cv::Scalar rgb_mean_;
     cv::Scalar rgb_std_;
     bool use_cuda_;
+    bool first_ = true;
+    std::shared_ptr<DosServer::WsServer> image_server_handler;
+    int image_serverPort = 5555;
+    std::vector<DosClient::ImageListCommandPacket::SubImage> image_data_pkt;
+    std::vector<uchar> seg_image_;    
 
 public:
     TorchEngine(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
     void image_callback(const sensor_msgs::ImageConstPtr &image);
-    void run_inference();
-    void run_gpu_inference();
+    cv::Mat run_inference(cv::Mat rgb_image_);
+
+    void start_server();
 };
     

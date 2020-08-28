@@ -11,8 +11,9 @@ server_address: "ws://localhost"
 server_port: 5555
 
 camera_frame: "d435_color_optical_frame"
-costmap_size: 5.0
+costmap_size: 10.0
 costmap_resolution: 0.05
+inflation_radius: 0.5 
 
 # change the below paths as required
 environment: "park" # park or office

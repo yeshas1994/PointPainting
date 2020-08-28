@@ -21,15 +21,20 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
   nh_private_.getParam("std",  std_);
   nh_private_.getParam("costmap_size", world_costmap_size_); // in m
   nh_private_.getParam("costmap_resolution", costmap_resolution_);
+  nh_private_.getParam("inflation_radius", inflation_radius_);
   nh_private_.getParam("environment", env_);
   nh_private_.getParam("use_server", use_server_);
   nh_private_.getParam("server_address", serverAddress);
   nh_private_.getParam("server_port", serverPort);
 
+
   rgb_mean_ = cv::Scalar(mean_[0], mean_[1], mean_[2]);
   rgb_std_ = cv::Scalar(std_[0] ,std_[1], std_[2]);
   size_ = (world_costmap_size_ / costmap_resolution_);
   costmap_size_  = static_cast<int>(size_);
+
+  image_out = std::make_shared<std::vector<uchar>>();
+  image_in = std::make_shared<std::vector<uchar>>();
 
   if (env_ == "office")
     path_index = 1;
@@ -57,6 +62,7 @@ PointPainting::PointPainting(const ros::NodeHandle& nh, const ros::NodeHandle& n
   painted_pts_pub_ = it.advertise("d435/color/painted_points", 1);
   map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("grid", 100);
   lidar_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("painted_cloud", 1);
+  occ_pub_ = nh_.advertise<std_msgs::Float32MultiArray>("dwa_map", 1);
   lidar_sub_.subscribe(nh_, velodyne_topic_, 1);
   image_sub_.subscribe(nh_, camera_topic_, 1);
   sync_.reset(new sync(sync_policy(1), image_sub_, lidar_sub_));
@@ -279,8 +285,9 @@ void PointPainting::create_costmap() {
   // costmap_viz_.info.origin.orientation.y = q[1];
   // costmap_viz_.info.origin.orientation.z = q[2];
   
+  occ.clear();
   occ.resize(costmap_size_ * costmap_size_);
-  std::fill(occ.begin(), occ.end(), 100);
+  std::fill(occ.begin(), occ.end(), 0.0);
   
   // costmap stuff
   costmap_image_ = cv::Mat(cv::Size(costmap_size_, costmap_size_), CV_8UC3);
@@ -290,9 +297,9 @@ void PointPainting::create_costmap() {
   costmap_image_.setTo(cv::Vec3b(0, 0, 0));
   // robot location
   cv::circle(costmap_image_, cv::Point(robot_x, robot_y), 5, cv::Vec3b(155, 0, 255), -1);
-  for (auto point : painted_points_) {
+  for (const auto& point : painted_points_) {
     std::pair<int, int> costmap_point;
-    std::pair<int, int> grid_point;
+    std::pair<float, float> grid_point;
     // only check for y since x axis was dealt with during filter
     if (point.y >= world_costmap_size_ / 2.0f || point.y <= -world_costmap_size_ / 2.0f) { 
       continue;
@@ -307,31 +314,67 @@ void PointPainting::create_costmap() {
 
     // grid_point.first = std::floor((-point.y + 2.5) / costmap_resolution_);
     // grid_point.second = std::floor((point.x) / costmap_resolution_);
-    grid_point.first = std::floor((-point.y + 2.5) / costmap_resolution_);
+    grid_point.first = std::floor((-point.y + world_costmap_size_/2.0f) / costmap_resolution_);
     grid_point.second = std::floor(point.x / costmap_resolution_);
-    if (costmap_point.first >= costmap_size_ || costmap_point.second >= costmap_size_)
+    if (grid_point.first >= costmap_size_ || grid_point.second >= costmap_size_ || grid_point.first < 0 || grid_point.second < 0)
       continue;
     // ROS_INFO_STREAM("map index " << grid_point << "world index " << point.y << " " << point.x);
     if (point.idx == path_index) { // 1 for office & 2 for park
       // continue;
       costmap_(costmap_point.first, costmap_point.second) = 1;
-      occ.at(grid_point.first + grid_point.second * costmap_size_) = 1;
+      occ.at(grid_point.first + grid_point.second * costmap_size_) = 0.0;
       // bresenham(grid_point.first, grid_point.second, robot_x, robot_y);
       costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) = cv::Vec3b(0, 255, 0);
     } else {
       costmap_(costmap_point.first, costmap_point.second) = 10;
       std::array<uchar, 3> class_color = color_map_[point.idx];
-      occ.at(grid_point.first + grid_point.second * costmap_size_) = 100;
+      occ.at(grid_point.first + grid_point.second * costmap_size_) = 1000.0;
+      inflate_obstacle(grid_point);
       costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) \
             = cv::Vec3b(class_color[2], class_color[1], class_color[0]);
     }
   }
   
-  costmap_viz_.data = occ;
-  map_pub_.publish(costmap_viz_);
+  // costmap_viz_.data = occ;
+  costmap_kr_.data = occ;
+  // map_pub_.publish(costmap_viz_);
+  occ_pub_.publish(costmap_kr_);
   cv::resize(costmap_image_, large_costmap, cv::Size(500,500), cv::INTER_LINEAR);
   // cv::imshow("Obstacle Costmap", large_costmap);
   // cv::waitKey(10);
+}
+
+void PointPainting::inflate_obstacle(const std::pair<float, float>& point) {
+  float x_index = point.first;
+  float y_index = point.second;
+  
+  int inflation_index = std::ceil(inflation_radius_ / costmap_resolution_);
+  // for(int i= -inflation_index + x_index; i < inflation_index + 1 + x_index; i++)
+  // {
+  //   for(int j= -inflation_index + y_index; j < inflation_index + 1 + y_index; j++)
+  //   {
+  for (int i = -inflation_index; i < inflation_index; i++) {
+    for (int j = -inflation_index; j < inflation_index; j++) {
+      // ROS_INFO_STREAM("1");
+      std::pair<float, float> curr_point; 
+      curr_point.first = x_index + i;
+      curr_point.second = y_index + j;
+      if (curr_point.first < 0 || curr_point.second < 0 || curr_point.first >= costmap_size_ || curr_point.second >= costmap_size_)
+        continue;            
+      float dist = std::sqrt(std::pow(i,2) + std::pow(j,2));            
+      if (dist > inflation_index)
+        continue;
+      // ROS_INFO_STREAM("2");
+      // ROS_INFO_STREAM(curr_point);
+      occ.at(curr_point.first + costmap_size_ * curr_point.second) = \
+                std::max(occ.at(curr_point.first + costmap_size_ * curr_point.second), (inflation_index / dist));      
+    }
+  }
+}
+
+inline bool PointPainting::point_valid(const std::pair<float, float>& point) {
+  return !(point.first < 0 || point.second < 0 ||  
+    point.first >= costmap_size_ || point.second >= costmap_size_ );
 }
 
 void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
@@ -382,100 +425,74 @@ void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
   } 
 }
 
-void PointPainting::debug(const sensor_msgs::ImageConstPtr &image) {
-  ROS_INFO("debug client-server");
-  rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
-  std::vector<uchar> imageSend;
+void PointPainting::send_image() {
+  std::vector<DosClient::ImageListCommandPacket::SubImage> new_images; 
+  DosClient::ImageListCommandPacket::SubImage subimage;
+  subimage.bytes = *image_out;
+  new_images.push_back(subimage);
+  client_handler->sendImage(new_images);
+}
 
-  if (rgb_image_.empty()) 
-  {
-    ROS_WARN("RGB Image not loaded");
-    return;
-
+bool PointPainting::start_client() {
+  client_handler = DosClient::WsClient::startClient<DosClient::WsRobotClient>(serverAddress, serverPort);
+  ROS_INFO_STREAM("client address and port " << serverAddress << " " << serverPort);
+  if (client_handler == nullptr) {
+    ROS_WARN("client failed to connect");
+    return false;
   }
 
-  if (use_server_) {
-    if (rgb_image_.isContinuous()) {
-      ROS_INFO("contiguous");
-      // ROS_INFO_STREAM(rgb_image_.at<cv::Vec3b>(124, 124));
-      imageSend.reserve(rgb_image_.rows * rgb_image_.cols * rgb_image_.channels());
-      // imageSend = rgb_image_.data;
-      imageSend.assign(rgb_image_.datastart, rgb_image_.dataend);
-    } else {
-      for (int i = 0; i < rgb_image_.rows; i++) {
-        imageSend.insert(imageSend.end(), rgb_image_.ptr<uchar>(i), rgb_image_.ptr<uchar>(i + rgb_image_.cols));
-      }
-    }
-  }
-
-  if (use_server_ && first_) {
-    first_ = false;
-    client_handler = DosClient::WsClient::startClient<DosClient::WsRobotClient>(serverAddress, serverPort);
-    ROS_INFO_STREAM("client address and port" << serverAddress << " " << serverPort);
-    if (client_handler == nullptr) {
-      ROS_WARN("client failed to connect");
-      return;
-    }
-    ROS_WARN("client failed to connect1");
-
-    std::vector<DosClient::ImageListCommandPacket::SubImage> images;
-    DosClient::ImageListCommandPacket::SubImage image;
-    image.bytes = imageSend;
-    image.label = "seg";
-    images.push_back(image);
-
-    // send image to for inference
-    // client_handler->sendImage(images);
-
-    client_handler->registerPacketRecvFn(
-      DosClient::COMMAND_MSG_TYPE,
-      [this](DosClient::BaseCommandPacket* pktIn) -> void
-      {
-        if (auto image_pkt = dynamic_cast<DosClient::MsgStrCommandPacket*>(pktIn)) {
-          // scope lock the following
-          {
-            // lock guard
-            // std::lock_guard<std::mutex> scopeLock(seg_lock);
-            // ROS_WARN("client failed to connect2");
-            // std::vector<DosClient::ImageListCommandPacket::SubImage> newImages; 
-            // std::vector<uint8_t> imageBytes;
-            // newImages = image_pkt->getImages();
-            // ROS_WARN("client failed to connect3");
-            // imageBytes = newImages[0].bytes;
-            // cv::Mat test(cv::Size(640, 480), CV_8UC3, imageBytes.data());
-            // ROS_WARN("client failed to connect4");
-            // seg_image_ = test.clone();
-            // ROS_WARN("client failed to connect5");
-            ROS_INFO_STREAM(image_pkt->getStrMsg());
+  client_handler->registerPacketRecvFn(
+    DosClient::COMMAND_IMG_LIST_TYPE,
+    [this](DosClient::BaseCommandPacket* pktIn) -> void
+    {
+      if (auto image_pkt = dynamic_cast<DosClient::ImageListCommandPacket*>(pktIn)) {
+        {
+          // lock guard
+          std::lock_guard<std::mutex> scopeLock(seg_lock);
+          std::vector<DosClient::ImageListCommandPacket::SubImage> newImages; 
+          std::vector<uint8_t> imageBytes;
+          newImages = image_pkt->getImages();
+          imageBytes = newImages[0].bytes;
+          if (imageBytes.empty()) {
             return;
-            // memcpy(seg_image_.data, imageBytes.data(), imageBytes.size() * sizeof(uchar));
-            // imageBytes.assign((uint8_t*)rgb_image_.datastart, (uint8_t*)rgb_image_.dataend);
           }
-          
-        }
-      });
+          cv::Mat test(cv::Size(640, 480), CV_8UC3, imageBytes.data());
+          seg_image_ = test.clone();        
+        }  
+      }
+    });
 
-    ROS_WARN("client failed to connect6");
+  client_handler->registerPacketRecvFn(
+    DosClient::COMMAND_MSG_TYPE,
+    [this](DosClient::BaseCommandPacket* pktIn) -> void
+    {
+      if (auto image_pkt = dynamic_cast<DosClient::MsgStrCommandPacket*>(pktIn)) {
+        {
+          // lock guard?
+          if (image_pkt->getStrMsg() == "image_request")
+            send_image();
+        }  
+      }
+    });
+
+  return true;
+}
+
+void PointPainting::load_images() {
+  image_in->reserve(rgb_image_.rows * rgb_image_.cols * rgb_image_.channels());
+  if (rgb_image_.isContinuous()) {
+    image_out->assign(rgb_image_.datastart, rgb_image_.dataend);
   } else {
-    seg_image_ = run_inference();
+    for (int i = 0; i < rgb_image_.rows; i++) {
+      image_out->insert(image_out->end(), rgb_image_.ptr<uchar>(i), rgb_image_.ptr<uchar>(i + rgb_image_.cols));
+    }
   }
-  client_handler->sendRobotMsgStr("hi");
-  
-  if (seg_image_.empty())
-  {
-    ROS_WARN("Segmentation Image not loaded");
-    return;
-  }
-
-  ROS_INFO("lol");
 }
 
 void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud_input) 
 {
-  ROS_INFO("start");
   // for headers use ros::Time::now();
   rgb_image_ = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8)->image;
-  std::vector<uchar> imageSend;
   
   if (rgb_image_.empty()) 
   {
@@ -484,82 +501,37 @@ void PointPainting::callback(const sensor_msgs::ImageConstPtr &image, const pcl:
 
   }
 
-
   if (use_server_ && first_) {
-    first_ = false;
-    client_handler = DosClient::WsClient::startClient<DosClient::WsRobotClient>(serverAddress, serverPort);
-    ROS_INFO_STREAM("client address and port" << serverAddress << " " << serverPort);
-    if (client_handler == nullptr) {
-      ROS_WARN("client failed to connect");
+    if (!start_client()) {
+      ROS_WARN("Client Start Error");
       return;
     }
+  }
 
-    // client_handler->sendRobotMsgStr("hi");
-
-    client_handler->registerPacketRecvFn(
-      DosClient::COMMAND_IMG_LIST_TYPE,
-      [this](DosClient::BaseCommandPacket* pktIn) -> void
-      {
-        if (auto image_pkt = dynamic_cast<DosClient::ImageListCommandPacket*>(pktIn)) {
-          // scope lock the following
-          {
-            // lock guard
-            std::lock_guard<std::mutex> scopeLock(seg_lock);
-            // ROS_WARN("client failed to connect2");
-            std::vector<DosClient::ImageListCommandPacket::SubImage> newImages; 
-            std::vector<uint8_t> imageBytes;
-            newImages = image_pkt->getImages();
-            imageBytes = newImages[0].bytes;
-            cv::Mat test(cv::Size(640, 480), CV_8UC3, imageBytes.data());
-            seg_image_ = test.clone();        
-            // ROS_INFO_STREAM(image_pkt->getStrMsg());
-            // memcpy(seg_image_.data, imageBytes.data(), imageBytes.size() * sizeof(uchar));
-            // imageBytes.assign((uint8_t*)rgb_image_.datastart, (uint8_t*)rgb_image_.dataend);
-          }
-          
-        }
-      });
-
-    // ROS_WARN("client failed to connect6");
-  } else {
-    // seg_image_ = run_inference();
+  if (!use_server_) {
+    seg_image_ = run_inference();
   }
   
   // abstract this part into funcion
   if (use_server_) {
-    if (rgb_image_.isContinuous()) {
-      // ROS_INFO("contiguous");
-      // ROS_INFO_STREAM(rgb_image_.at<cv::Vec3b>(124, 124));
-      imageSend.reserve(rgb_image_.rows * rgb_image_.cols * rgb_image_.channels());
-      // imageSend = rgb_image_.data;
-      imageSend.assign(rgb_image_.datastart, rgb_image_.dataend);
-    } else {
-      for (int i = 0; i < rgb_image_.rows; i++) {
-        imageSend.insert(imageSend.end(), rgb_image_.ptr<uchar>(i), rgb_image_.ptr<uchar>(i + rgb_image_.cols));
-      }
-    }
-    std::vector<DosClient::ImageListCommandPacket::SubImage> images;
-    DosClient::ImageListCommandPacket::SubImage image;
-    image.bytes = imageSend;
-    image.label = "seg";
-    images.push_back(image);
+    load_images();
 
     // send image to for inference
-    client_handler->sendImage(images);
-    // client_handler->sendRobotMsgStr("hi");
+    if (first_) {
+      send_image();
+      first_ = false;
+    } 
+
   }
   
-  while (seg_image_.empty())
+  if (seg_image_.empty())
   {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    ROS_WARN("where is the segmentation image");
+    return;
   } 
 
-  
-  // ROS_INFO("lol");
   filter_pointcloud(cloud_input);
-  // ROS_INFO("lol2");
   paint_points();
-  // ROS_INFO("lol3");
   create_costmap();
   
 }

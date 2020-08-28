@@ -2,6 +2,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/Image.h>
 #include <std_msgs/Header.h>
+#include <std_msgs/Float32MultiArray.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -56,9 +57,14 @@ public:
     void lidar_to_pixel(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
     cv::Mat run_inference();
     void create_costmap();
+    void inflate_obstacle(const std::pair<float, float>& point);
+    inline bool point_valid(const std::pair<float, float>& point);
+    bool start_client();
 
 private:
     void bresenham(int x1, int y1, int x2, int y2);
+    void send_image();
+    void load_images();
 
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -68,6 +74,7 @@ private:
     image_transport::ImageTransport it;
     ros::Publisher lidar_pub_;
     ros::Publisher map_pub_;
+    ros::Publisher occ_pub_;
 
     // tf not implemented yet
     tf::TransformListener tf_listener;
@@ -102,13 +109,12 @@ private:
 
     std::vector<PointPainting::PtData> painted_points_;
     Eigen::MatrixXf costmap_;
-    std::vector<signed char> occ;
+    // std::vector<signed char> occ;
+    std::vector<float> occ;
+    std_msgs::Float32MultiArray costmap_kr_;
     nav_msgs::OccupancyGrid costmap_viz_;
     cv::Mat costmap_image_;
-    std::string velodyne_topic_;
-    std::string camera_topic_;
-    std::string inference_topic_;
-    std::string camera_frame_;
+    std::string velodyne_topic_, camera_topic_, inference_topic_ , camera_frame_;
     bool use_cuda_;
     bool use_server_;
     bool first_ = true;
@@ -116,9 +122,12 @@ private:
     std::mutex seg_lock;
     std::string serverAddress;
     std::shared_ptr<DosClient::WsRobotClient> client_handler;
+    std::shared_ptr<std::vector<uchar>> image_in;
+    std::shared_ptr<std::vector<uchar>> image_out;
     std::array<std::array<uchar, 3>, 12> color_map_{}; 
     float world_costmap_size_;
     float costmap_resolution_;
+    float inflation_radius_;
     int costmap_size_;
     float size_;
 };

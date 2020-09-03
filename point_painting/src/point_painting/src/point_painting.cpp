@@ -305,7 +305,7 @@ void PointPainting::create_costmap() {
   ############
   where O is robot 
   */
-  int robot_x = costmap_size_ / 2; 
+  int robot_x = costmap_size_ / 2 ; 
   int robot_y = costmap_size_ / 2;
   costmap_image_.setTo(cv::Vec3b(0, 0, 0));
   // robot location
@@ -315,6 +315,7 @@ void PointPainting::create_costmap() {
     std::pair<float, float> grid_point;
     // only check for y since x axis was dealt with during filter
     if (point.y >= world_costmap_size_ / 2.0f || point.y <= -world_costmap_size_ / 2.0f) { 
+    // if (point.y >= world_costmap_size_  || point.y < 0) { 
       continue;
     }
 
@@ -330,8 +331,8 @@ void PointPainting::create_costmap() {
     // grid_point.first = std::floor((-point.y + world_costmap_size_/2.0f) / costmap_resolution_);
     // grid_point.second = std::floor(point.x / costmap_resolution_);
 
-    grid_point.first = std::floor((-point.x + world_costmap_size_) / costmap_resolution_);
-    grid_point.second = std::floor((-point.y + world_costmap_size_) / costmap_resolution_);
+    grid_point.first = std::floor((-point.x + world_costmap_size_/2.0f) / costmap_resolution_);
+    grid_point.second = std::floor((-point.y + world_costmap_size_/2.0f) / costmap_resolution_);
 
     if (grid_point.first >= costmap_size_ || grid_point.second >= costmap_size_ || grid_point.first < 0 || grid_point.second < 0)
       continue;

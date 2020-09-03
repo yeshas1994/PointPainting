@@ -287,13 +287,26 @@ void PointPainting::create_costmap() {
   
   occ.clear();
   occ.resize(costmap_size_ * costmap_size_);
-  std::fill(occ.begin(), occ.end(), 0.0);
+  std::fill(occ.begin(), occ.end(), 1000.0);
   
   // costmap stuff
   costmap_image_ = cv::Mat(cv::Size(costmap_size_, costmap_size_), CV_8UC3);
   cv::Mat large_costmap;
-  int robot_x = costmap_size_ / 2;
-  int robot_y = costmap_size_ - 1;
+  /*
+  costmap appearance
+  ############
+  #          #
+  #          #
+  #          #
+  #          #
+  #          #
+  #          #
+  #    O     #
+  ############
+  where O is robot 
+  */
+  int robot_x = costmap_size_ / 2; 
+  int robot_y = costmap_size_ / 2;
   costmap_image_.setTo(cv::Vec3b(0, 0, 0));
   // robot location
   cv::circle(costmap_image_, cv::Point(robot_x, robot_y), 5, cv::Vec3b(155, 0, 255), -1);
@@ -314,24 +327,25 @@ void PointPainting::create_costmap() {
 
     // grid_point.first = std::floor((-point.y + 2.5) / costmap_resolution_);
     // grid_point.second = std::floor((point.x) / costmap_resolution_);
-    grid_point.first = std::floor((-point.y + world_costmap_size_/2.0f) / costmap_resolution_);
-    grid_point.second = std::floor(point.x / costmap_resolution_);
+    // grid_point.first = std::floor((-point.y + world_costmap_size_/2.0f) / costmap_resolution_);
+    // grid_point.second = std::floor(point.x / costmap_resolution_);
+
+    grid_point.first = std::floor((-point.x + world_costmap_size_) / costmap_resolution_);
+    grid_point.second = std::floor((-point.y + world_costmap_size_) / costmap_resolution_);
+
     if (grid_point.first >= costmap_size_ || grid_point.second >= costmap_size_ || grid_point.first < 0 || grid_point.second < 0)
       continue;
     // ROS_INFO_STREAM("map index " << grid_point << "world index " << point.y << " " << point.x);
     if (point.idx == path_index) { // 1 for office & 2 for park
       // continue;
-      costmap_(costmap_point.first, costmap_point.second) = 1;
-      occ.at(grid_point.first + grid_point.second * costmap_size_) = 0.0;
-      // bresenham(grid_point.first, grid_point.second, robot_x, robot_y);
-      costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) = cv::Vec3b(0, 255, 0);
+      // costmap_(costmap_point.first, costmap_point.second) = 1;
+      occ.at(grid_point.second + costmap_size_ * grid_point.first) = 0.0;
+      bresenham(grid_point.first, grid_point.second, robot_x, robot_y);
     } else {
-      costmap_(costmap_point.first, costmap_point.second) = 10;
+      // costmap_(costmap_point.first, costmap_point.second) = 10;
       std::array<uchar, 3> class_color = color_map_[point.idx];
-      occ.at(grid_point.first + grid_point.second * costmap_size_) = 1000.0;
-      inflate_obstacle(grid_point);
-      costmap_image_.at<cv::Vec3b>(cv::Point(costmap_point.first, costmap_point.second)) \
-            = cv::Vec3b(class_color[2], class_color[1], class_color[0]);
+      // occ.at(grid_point.first + grid_point.second * costmap_size_) = 1000.0;
+      // inflate_obstacle(grid_point);
     }
   }
   
@@ -339,7 +353,7 @@ void PointPainting::create_costmap() {
   costmap_kr_.data = occ;
   // map_pub_.publish(costmap_viz_);
   occ_pub_.publish(costmap_kr_);
-  cv::resize(costmap_image_, large_costmap, cv::Size(500,500), cv::INTER_LINEAR);
+  // cv::resize(costmap_image_, large_costmap, cv::Size(500,500), cv::INTER_LINEAR);
   // cv::imshow("Obstacle Costmap", large_costmap);
   // cv::waitKey(10);
 }
@@ -403,13 +417,13 @@ void PointPainting::bresenham(int x1, int y1, int x2, int y2) {
       // if (costmap_(y, x) == 0) {
       //   costmap_(y, x) = 1;
       //   costmap_image_.at<cv::Vec3b>(cv::Point(y, x)) = cv::Vec3b(255, 255, 255);  
-        occ.at(y * costmap_size_ + x) = 1;
+        occ.at(x + costmap_size_ * y) = 0.0;
       // }
     } else {
       // if (costmap_(x, y) == 0) {
       //   costmap_(x, y) = 1;
       //   costmap_image_.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 255, 255);  
-        occ.at(x * costmap_size_ + y) = 1;
+        occ.at(y + costmap_size_ * x) = 0.0;
       // }
     }
     // Add slope to increment angle formed 

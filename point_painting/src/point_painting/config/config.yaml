@@ -7,7 +7,7 @@ std: [0.225, 0.225, 0.225]
 # enable gpu-inference
 use_cuda: False
 use_server: True
-server_address: "ws://localhost"
+server_address: "ws://10.10.2.133"
 server_port: 5555
 
 camera_frame: "d435_color_optical_frame"

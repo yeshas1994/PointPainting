@@ -1,9 +1,0 @@
-Generate TLS Certificate on Linux with:
-
-1. openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.crt
-2. cat server.key server.crt > server.pem
-
-You will have to answer several questions, but the most important question is 
-the “Common Name (eg, your name or your server’s hostname) []”. 
-It needs to be either the IP of your server, example -subj /CN=192.168.1.1 if you are running your local server on IP 192.168.1.1 
-or a domain name that you control. For localhost testing, enter "localhost" for "Common Name"
